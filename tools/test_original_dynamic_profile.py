@@ -106,10 +106,15 @@ class OriginalDynamicTests(unittest.TestCase):
         self.assertIn(relative, str(missing.exception))
         source = HERE / "client-policy"
         policy = json.loads((source / "policy.json").read_text(encoding="utf-8-sig"))
-        for name in ("prepare.py", "policy.json", *(row["template"] for row in policy["scripts"])):
+        # This synthetic future author snapshot contains no Memory Settings mod.
+        del policy["earlyClientWarning"]
+        for name in ("prepare.py", *(row["template"] for row in policy["scripts"])):
             destination = self.root / "tools/client-policy" / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes((source / name).read_bytes())
+        (self.root / "tools/client-policy/policy.json").write_text(json.dumps(policy), encoding="utf-8")
+        helper = "memory_warning_policy.py"
+        (self.root / "tools" / helper).write_bytes((HERE / helper).read_bytes())
         result = subprocess.run([sys.executable, "-B", str(self.root / "tools/client-policy/prepare.py"),
             "--pack", str(self.root), "--templates-only", "--apply"], capture_output=True, text=True,
             encoding="utf-8", check=True)

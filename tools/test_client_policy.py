@@ -15,7 +15,7 @@ spec.loader.exec_module(policy_tool)
 class ClientPolicyTests(unittest.TestCase):
     def test_early_memory_patch_is_exact_reversible_and_refuses_drift(self):
         memory = policy_tool.memory_warning_policy
-        original = (ROOT / memory.CONFIG).read_bytes()
+        current = (ROOT / memory.CONFIG).read_bytes()
         author_lock = json.loads((ROOT / "tools/upstream-lock.json").read_bytes())
         records = [*author_lock["overrides"], *author_lock["files"]]
         with tempfile.TemporaryDirectory() as directory:
@@ -25,13 +25,17 @@ class ClientPolicyTests(unittest.TestCase):
             policy_file.write_bytes((ROOT / "tools/client-policy/policy.json").read_bytes())
             config = root / memory.CONFIG
             config.parent.mkdir()
-            config.write_bytes(original)
+            config.write_bytes(current)
             warning = memory.load(root, records, policy_tool.target)
+            warning.normalize()
+            original = config.read_bytes()
+            self.assertTrue(warning.matches(original, warning.author))
             with self.assertRaisesRegex(ValueError, "advisory policy is missing"):
                 warning.verify()
             warning.apply()
             warning.verify()
-            self.assertEqual(config.read_bytes(), original.replace(b'"minimumClient": 8192', b'"minimumClient": 0'))
+            minimum = f'"minimumClient": {warning.original_minimum}'.encode("ascii")
+            self.assertEqual(config.read_bytes(), original.replace(minimum, b'"minimumClient": 0'))
             warning.apply()
             warning.normalize()
             self.assertEqual(config.read_bytes(), original)
