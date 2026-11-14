@@ -53,6 +53,10 @@ def verify(pack: Path) -> dict:
         path = pack.joinpath(*PurePosixPath(rel).parts)
         assert path.is_file(), "Missing author file: " + rel
         overlay = profile["overlays"].get(rel) if profile else None
+        warning = profile.get("memoryWarningPolicy") if profile else None
+        if warning is not None and rel == warning.effective["path"]:
+            warning.verify()
+            continue
         size = overlay["localizedSizeBytes"] if overlay else row["sizeBytes"]
         expected_sha = overlay["localizedSha256"] if overlay else row["sha256"]
         assert path.stat().st_size == size, "Size mismatch: " + rel

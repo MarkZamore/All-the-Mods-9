@@ -15,6 +15,7 @@ from pathlib import Path
 import atm9_ru_quests
 import atm9_quest_profile
 import carpets_recipe_policy
+import memory_warning_policy
 import waypoint_source_policy
 
 PROFILE = "tools/portable-profile.json"
@@ -202,6 +203,7 @@ def load(pack: Path):
     payload_records = records if bundled_client else records[:-1]
     return {"document": doc, "records": payload_records, "bundledClient": bundled_client,
             "overlays": {r["path"]: r for r in overlays},
+            "memoryWarningPolicy": memory_warning_policy.load(pack, records, resource),
             "overrides": {r["path"] for r in lock["overrides"]}, "support": support}
 
 
@@ -244,6 +246,7 @@ def load_dynamic(pack: Path, doc: dict):
     payload_records = records if bundled_client else records[:-1]
     return {"document": doc, "records": payload_records, "sourceRecords": records,
             "bundledClient": bundled_client, "overlays": reviewed["overlays"],
+            "memoryWarningPolicy": memory_warning_policy.load(pack, records, resource),
             "overrides": {r["path"] for r in lock["overrides"]}, "support": supports,
             "dynamic": reviewed, "upstreamBytes": raw}
 
@@ -253,6 +256,7 @@ def preflight(pack: Path, profile: dict, *, require_all=False,
     """Check the whole present tree before any normalization, import or download."""
     localized = missing = 0
     expected = set()
+    memory_warning = profile.get("memoryWarningPolicy")
     for row in profile["records"]:
         rel = row["path"]
         expected.add(rel)
@@ -268,10 +272,14 @@ def preflight(pack: Path, profile: dict, *, require_all=False,
         original = size == row["sizeBytes"] and current == row["sha256"]
         overlay = profile["overlays"].get(rel)
         translated = overlay is not None and size == overlay["localizedSizeBytes"] and current == overlay["localizedSha256"]
-        if not (original or translated) or (original_only and not original):
+        memory_effective = (memory_warning is not None and rel == memory_warning_policy.CONFIG
+                            and memory_warning.is_effective(path.read_bytes()))
+        if not (original or translated or memory_effective) or (original_only and not original):
             raise ValueError("Unknown author resource size/SHA256: " + rel)
         if localized_only and overlay is not None and not translated:
             raise ValueError("Reviewed display localization is missing: " + rel)
+        if localized_only and memory_warning is not None and rel == memory_warning_policy.CONFIG and not memory_effective:
+            raise ValueError("Reviewed Memory Settings advisory policy is missing: " + rel)
         localized += int(translated)
     allowed = expected | set(profile["support"])
     actual = {p.relative_to(pack).as_posix() for root in AUTHOR_ROOTS

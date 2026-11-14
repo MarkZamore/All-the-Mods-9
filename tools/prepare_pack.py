@@ -30,6 +30,9 @@ def prepare(pack, cache, workers=8, restore_locked_files=False):
                         "--root", str(pack), "--manifest", str(pack / manifest)], check=True)
 
     overlay("normalize")
+    memory_warning = profile.get("memoryWarningPolicy")
+    if memory_warning is not None:
+        memory_warning.normalize()
     current = profile_tools.load(pack)
     if dynamic:
         import atm9_quest_restore
@@ -44,6 +47,8 @@ def prepare(pack, cache, workers=8, restore_locked_files=False):
         subprocess.run(command, check=True)
     profile_tools.preflight(pack, profile_tools.load(pack), require_all=True, original_only=True)
     overlay("apply")
+    if memory_warning is not None:
+        memory_warning.apply()
     final = profile_tools.preflight(pack, profile_tools.load(pack), require_all=True, localized_only=True)
     overlay("verify")
     if profile.get("document", {}).get("recipeDataFixPolicy") is not None:

@@ -102,10 +102,10 @@ ModList observation, rather than adding a guessed ID to older evidence.
 `kubejs/client_scripts/lanmc_memory_warning_policy.js` sets only the loaded native
 Memory Settings `disableWarnings=true` before its initial game-menu check. This
 prevents its upper-memory panel for a launcher-selected heap above the author's
-14336 MiB (14 GiB) recommendation. The original author JSON remains byte-identical and
-literally false: neither the script nor the launcher rewrites it or unrelated
-personal options. Earlier native low-heap Swing warnings and constructor logs are
-outside this client-stage policy. No heap, render or simulation limit is added.
+14336 MiB (14 GiB) recommendation. The pack restore separately sets
+`minimumClient.minimumClient=0` in the verified author override to suppress
+the early Swing recommendation. The authored minimum stays in the upstream
+lock, and the restore verifies the exact one-field change each time.
 
 [The native client-policy tool](tools/client-policy/README.md) validates its actual
 public config API. Its hash-pinned template stage runs **before** strict source
