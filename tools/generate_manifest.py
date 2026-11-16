@@ -32,6 +32,7 @@ from pack_library import stage_library, verify_library
 import network_logging_policy
 import carpets_recipe_policy
 import waypoint_source_policy
+import multiplayer_warning_policy
 
 import argparse
 import fnmatch
@@ -138,8 +139,9 @@ def load_portable_pack(pack: Path) -> dict:
 class Staging:
     """Accumulates staged assets, deduplicating byte-identical single-file assets."""
 
-    def __init__(self, assets_dir: Path) -> None:
+    def __init__(self, assets_dir: Path, overrides: dict[str, bytes]) -> None:
         self.assets_dir = assets_dir
+        self.overrides = overrides
         self.by_name: dict[str, dict] = {}
 
     def add_single_file(self, pack: Path, rel: str, prefix: str,
@@ -181,8 +183,12 @@ class Staging:
                 info.compress_type = method
                 info.external_attr = 0
                 info.create_system = 3  # platform-independent header bytes
-                with archive.open(info, "w") as dst, open(pack / Path(rel), "rb") as srcf:
-                    shutil.copyfileobj(srcf, dst, CHUNK)
+                with archive.open(info, "w") as dst:
+                    if rel in self.overrides:
+                        dst.write(self.overrides[rel])
+                    else:
+                        with open(pack / Path(rel), "rb") as srcf:
+                            shutil.copyfileobj(srcf, dst, CHUNK)
                 # ZipFile.open(..., "w") force-sets external_attr 0o600<<16 when it
                 # is 0; reset it before the central directory is written on close.
                 info.external_attr = 0
@@ -222,11 +228,21 @@ def generate(pack: Path, out: Path, revision: str) -> None:
         shipped.append(root_file)
     shipped.sort()  # ordinal (codepoint) order
 
+    options = multiplayer_warning_policy.setting_path(
+        portable, (pack / multiplayer_warning_policy.PROFILE).read_bytes())
+    if options not in shipped:
+        fail("DefaultSettings options are missing: " + options)
+    overrides = {options: multiplayer_warning_policy.apply((pack / options).read_bytes())}
+
     # Hash every shipped file once; single-file assets reuse these hashes.
     file_meta: dict[str, tuple[str, int]] = {}
     for rel in shipped:
         path = pack / Path(rel)
-        file_meta[rel] = (sha256_file(path), path.stat().st_size)
+        if rel == options:
+            raw = overrides[rel]
+            file_meta[rel] = (hashlib.sha256(raw).hexdigest(), len(raw))
+        else:
+            file_meta[rel] = (sha256_file(path), path.stat().st_size)
 
     assets_dir = out / "assets"
     if assets_dir.exists():
@@ -242,7 +258,7 @@ def generate(pack: Path, out: Path, revision: str) -> None:
         name = rel.rsplit("/", 1)[-1].lower()
         return any(fnmatch.fnmatchcase(name, pattern) for pattern in hot_patterns)
 
-    staging = Staging(assets_dir)
+    staging = Staging(assets_dir, overrides)
     buckets: dict[int, list[str]] = {}
     for rel in per_root.get("mods", []):
         if is_hot(rel):
@@ -348,6 +364,10 @@ def verify_only(out: Path, verify_all: bool = False) -> None:
                  f"expected {asset['sha256']}/{asset['sizeBytes']}, "
                  f"got {actual_sha}/{actual_size}")
         print(f"verify ok: {asset['name']}")
+    try:
+        multiplayer_warning_policy.verify(out, manifest)
+    except (ValueError, OSError, KeyError, TypeError, zipfile.BadZipFile) as error:
+        fail("pack-owned multiplayer advisory policy invalid: " + str(error))
     print(f"verified {len(sample)} of {len(assets)} staged assets")
 
 

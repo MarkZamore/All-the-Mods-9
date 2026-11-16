@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
+import multiplayer_warning_policy
 
 POLICY = "steam-only-automatic-server-list-v1"
 SEEDS = {"servers.dat", "servers.dat_old"}
@@ -31,6 +32,17 @@ def inventory_sha256(files):
     return hashlib.sha256(raw).hexdigest()
 
 
+def read_source(pack, relative):
+    target = pack / relative
+    # Do not follow a link to personal or external data, even for inspection.
+    for part in (target, *target.parents):
+        if part == pack.parent:
+            break
+        if part.is_symlink() or part.is_junction():
+            raise ValueError("Policy input may not be a link: " + str(relative))
+    return target.read_bytes()
+
+
 def verify(pack, manifest, policy=None):
     pack = Path(pack).resolve()
     policy_path = pack / "tools/public-server-policy.json" if policy is None else Path(policy)
@@ -41,6 +53,8 @@ def verify(pack, manifest, policy=None):
     actual = inventory_sha256(files)
     if actual != data.get("reviewedInventorySha256"):
         raise ValueError("Unreviewed delivery inputs: re-audit server seeds, menus and native hooks before publication; never auto-repin")
+    options = multiplayer_warning_policy.setting_path(
+        manifest, read_source(pack, multiplayer_warning_policy.PROFILE))
     checked = []
     for item in files:
         relative = PurePosixPath(item["path"])
@@ -48,14 +62,9 @@ def verify(pack, manifest, policy=None):
             raise ValueError("A server-list seed may not be shipped: " + item["path"])
         if relative.suffix.casefold() not in TEXT or item["sizeBytes"] > 2 * 1024 * 1024:
             continue
-        target = pack.joinpath(*relative.parts)
-        # Do not follow a link to personal or external data, even for inspection.
-        for part in (target, *target.parents):
-            if part == pack.parent:
-                break
-            if part.is_symlink() or part.is_junction():
-                raise ValueError("Policy input may not be a link: " + item["path"])
-        raw = target.read_bytes()
+        raw = read_source(pack, relative)
+        if item["path"] == options:
+            raw = multiplayer_warning_policy.apply(raw)
         if len(raw) != item["sizeBytes"] or hashlib.sha256(raw).hexdigest() != item["sha256"]:
             raise ValueError("Policy input differs from the manifest: " + item["path"])
         text = raw.decode("utf-8-sig", errors="replace")

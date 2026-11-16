@@ -49,3 +49,20 @@ executes the actual pack script with real Rhino NativeJavaClass handling and
 checks only disableWarnings changes, personal file bytes and idempotence. Its
 small Java.loadClass binding delegates to actual native Java/Rhino classes and
 is not a full KubeJS lifecycle/game test. No private paths or logs are shipped.
+
+## Multiplayer advisory default
+
+After the locked author payload has been restored, the normal release generator
+reads the active DefaultSettings profile from `config/defaultsettings.json`.
+In that profile's staged `options.txt`, it sets `skipMultiplayerWarning:true`,
+adding the line when the author omits it. The remaining template bytes and
+the profile metadata are preserved. DefaultSettings uses its profile metadata
+to decide whether to reapply a preset to an existing installation, so the
+policy preserves that metadata.
+
+The release's `--verify-all` checks the value in the staged archive and checks
+the options file against the manifest. The server-list inventory review still
+applies to the final staged file hashes. Retain `tools/multiplayer_warning_policy.py`
+and the generator and verifier calls when importing a new author archive.
+Review the applicable setting before moving to another Minecraft platform or
+removing DefaultSettings.
